@@ -1,0 +1,11 @@
+*.csv
+dumps
+*.bat
+
+*.pub
+*.txt
+
+pgp
+*.pgp
+*.gpg
+*.encrypted
