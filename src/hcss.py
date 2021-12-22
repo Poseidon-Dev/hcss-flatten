@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from src.ecmsconn import JobQuery
 
+pd.options.display.float_format = '{:,.0f}'.format
 class HCSSExport:
 
     def __init__(self, file_path):
@@ -38,6 +39,7 @@ class HCSSExport:
             'Sub Project / Job Number': 'SUB'
         }
         self.df = pd.read_excel(self.file_path, converters={
+            'Project/Job Number': lambda x: str(x),
             'Sub Project / Job Number': lambda x: str(x),
             'Job Cost Distribution': lambda x: str(x),
             })[self.cols]
@@ -83,12 +85,36 @@ class HCSSExport:
 
     
     def fetch_state(self):
-        self.df['State'] = self.df.apply(lambda x: JobQuery(x['Project/Job Number'], x['Sub Project / Job Number']).to_df()['STATE'], axis=1)
+        self.df['STATE'] = self.df.apply(lambda x: JobQuery(x['JOB'], x['SUB']).to_df()['STATE'], axis=1)
         return self
 
 
-    def zfill_subjob(self):
-        self.df['SUB'] = self.df['SUB'].str.zfill(3)
+    def grab_states(self):
+        states = JobQuery().to_df()
+        states['STATE'] = states['STATE'].astype(int)
+        return states
+    
+
+    def add_states(self):
+        states = self.grab_states()
+        self.df['SUB'] = self.df['SUB'].fillna('')
+        self.df['SUB'] = self.df['SUB'].astype(str)
+        self.df = pd.merge(self.df, states, how='left', on=['JOB', 'SUB'])
+        return self
+
+    
+    def convert_state_to_ukg(self):
+        converter = {
+            30: 'AZ',
+            31: 'AZ',
+            50: 'CAHQ',
+            320: 'NM',
+            290: 'NV',
+            380: 'OR',
+            631: 'AZ',
+            650: 'OR',
+        }
+        self.df['STATE'] = self.df['STATE'].replace(converter)
         return self
 
 
@@ -96,6 +122,12 @@ class HCSSExport:
         self.df['PROJECT'] = self.df['JOB'].astype(str) + self.df['SUB']
         self.df.drop(columns='JOB', axis=1, inplace=True)
         self.df.drop(columns='SUB', axis=1, inplace=True)
+        return self
+
+    
+    def zfill_subjob(self):
+        self.df['SUB'] = self.df['SUB'].apply(lambda x: x.zfill(3) if len(x) > 0 else '')
+        # self.df['SUB'] = self.df['SUB'].str.zfill(3)
         return self
 
 
@@ -115,6 +147,7 @@ class HCSSExport:
             'WEEKNO', 
             'DAYOFWEEK',
             'PROJECT',
+            'STATE',
             'JCDIST1',
             'JCDIST2',
             'REG',
@@ -136,6 +169,8 @@ class HCSSExport:
         self.rename_df()
         self.company_number_to_name()
         self.hours_adjustments()
+        self.add_states()
+        self.convert_state_to_ukg()
         self.zfill_subjob()
         self.job_merge()
         self.phase_code_split()
@@ -167,16 +202,10 @@ class MergeHeavy:
 
     @property
     def merge(self):
-        frames = [HCSSExport(d).company_number_to_name() for d in self.collect_file_paths()]
+        frames = [HCSSExport(d).process() for d in self.collect_file_paths()]
         df = pd.concat(frames)
         return df
-        df = add_state(df)
+   
 
-    
-    def add_state(self, df):
-        df['State'] = df.apply(lambda x: JobQuery(x['Project/Job Number'], x['Sub Project / Job Number']).to_df()['STATE'], axis=1)
-        return df
-
-
-    def save(self, name='export.xlsx'):
+    def save(self, name='dumps/export.xlsx'):
         self.merge.to_excel(name, index=False, header=True)
