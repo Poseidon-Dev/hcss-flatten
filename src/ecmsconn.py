@@ -25,7 +25,7 @@ class JobQuery(EcmsQuery):
     command = f"""
         SELECT JOBNUMBER as Job, trim(SUBJOBNUMBER) as Sub, STSLSTAXCD as State 
         FROM CMSFIL.JCTDSC 
-        WHERE COMPANYNUMBER = 1
+        WHERE COMPANYNUMBER in (1, 30, 40)
         ORDER BY JCTDSCID DESC
         """
 
