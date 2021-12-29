@@ -1,8 +1,10 @@
 import pandas as pd
 import os
+
 from src.ecmsconn import JobQuery
 
 pd.options.display.float_format = '{:,.0f}'.format
+
 class HCSSExport:
 
     def __init__(self, file_path):
@@ -209,3 +211,145 @@ class MergeHeavy:
 
     def save(self, name='dumps/export.xlsx'):
         self.merge.to_excel(name, index=False, header=True)
+
+
+class HourCalculations:
+
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self._df = pd.read_excel(self.file_path)
+
+
+    @property
+    def df(self):
+        """
+        Returns a dataframe that adds the column OTSTATE which contains
+        the state in which an employees OT rules should follow
+        COMPLETE
+        """
+        df = self._df.copy()
+        df = df[df.EMPLOYEENO == 10027]
+        multistate = self.multi_state_employees()
+        df['OTSTATE'] = df.apply(lambda row: self.ot_state(row, multistate), axis=1)
+        return df
+
+
+    def multi_state_employees(self):
+        """
+        Returns a list employee numbers who worked in two states with one state being CA
+        COMPLETE
+        """
+        ## Copy Original Dataframe
+        multi_state_df = self._df.copy()
+
+        ## Check if the employee worked in california
+        multi_state_df['STATEBOOL'] = multi_state_df.apply(lambda row: self.check_state(row), axis=1)
+
+        ## Group the dataframe to return singluar rows per state entry
+        multi_state_df = multi_state_df.groupby(['COMPANYNO', 'EMPLOYEENO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'STATEBOOL']).size().reset_index()
+        
+        ## Return a dataframe that contains the employees who worked in two states, with one being CA
+        multi_state_df = multi_state_df['EMPLOYEENO'].value_counts().reset_index()
+        multi_state_df = multi_state_df[multi_state_df['EMPLOYEENO'] > 1]
+        
+        return multi_state_df['index'].tolist()
+
+    
+    def calc_non_ca_hours(self):
+        """
+        Returns a list of employees who worked not in CA and over 40 hours
+        COMPLETE
+        """
+        df = self.df[self.df['OTSTATE'] != 'CA'].copy()
+        df['RUNNINGHRS'] = df['REG'].cumsum(axis=0)
+
+        for idx,row in df.iterrows():
+            if row['RUNNINGHRS'] <= 40:
+                df.loc[idx, 'HRS'] = row['REG']
+            else:
+                df.loc[idx, 'HRS'] = 0
+                df.loc[idx, 'OT'] = row['REG']
+
+        df.drop(columns='RUNNINGHRS', axis=1, inplace=True)
+        df.fillna(0, inplace=True)
+        df['OTHER'] = df['OTH']
+        df['OTTYPE'] = df['TYPE']
+        return df
+
+   
+    def calc_ca_hours(self):
+        """
+        A factory method that runs appropriate static methods for
+        each hours type for CA employes
+
+        Need to look at compiling data for a given day
+        """
+        df = self.df[self.df['OTSTATE'] == 'CA'].copy()
+
+        df['HRS'] = 0
+        df['OT'] = 0
+        df['OTHER'] = 0
+        df['OTTYPE'] = ''
+
+        for idx,row in df.iterrows():
+            self.regular_hours_transpose(idx, row, df)
+            self.overtime_hours_transpose(idx, row, df)
+            self.other_hours_transpose(idx, row, df)
+       
+        return df
+
+
+    @staticmethod
+    def regular_hours_transpose(idx, row, df):
+        """
+        Max regular hours to 8 
+        """
+        if row['REG'] >= 8:
+            df.loc[idx, 'HRS'] = 8
+        else:
+            df.loc[idx, 'HRS'] = row['REG']
+
+    @staticmethod
+    def overtime_hours_transpose(idx, row, df):
+        """
+        Take any hours over 8 in a day, and make them overtime
+        """
+        df.loc[idx, 'OT'] = row['OVT'] + (row['REG'] - df.loc[idx, 'HRS'])
+
+    
+    @staticmethod
+    def other_hours_transpose(idx, row, df):
+        """
+        If overtime hours are over 4 hours, then move difference to otherhours and 
+        change other type to DT
+        """
+        if row['OTH'] + (df.loc[idx, 'OT'] - 4) > 0:
+            df.loc[idx, 'OTHER'] = row['OTH'] + (df.loc[idx, 'OT'] - 4)
+            df.loc[idx, 'OTTYPE'] = 'DT'
+            df.loc[idx, 'OT'] = df.loc[idx, 'OT'] - df.loc[idx, 'OTHER']
+            
+
+
+    @staticmethod
+    def ot_state(row, multistate):
+        """
+        Checks to see if the employee has worked in multiple states
+        If they worked at least in CA, then return CA
+        Else return their respective working state
+        """
+        if row['EMPLOYEENO'] in multistate:
+            return 'CA'
+        elif row['STATE'] == 'CAHQ':
+            return 'CA'
+        else:
+            return row['STATE']
+
+
+    @staticmethod
+    def check_state(row):
+        if row['STATE'] == 'CAHQ':
+            return 1
+        else:
+            return 0
+
+    

@@ -1,6 +1,6 @@
 import pandas as pd
 from src.ecmsconn import JobQuery
-from src.hcss import MergeHeavy, HCSSExport
+from src.hcss import MergeHeavy, HCSSExport, HourCalculations
 
 
 ## Singular Test
@@ -10,5 +10,12 @@ from src.hcss import MergeHeavy, HCSSExport
 
 
 ## Test All
-df = MergeHeavy()
-df.save()
+df = HourCalculations('dumps\export.xlsx')
+data = df.calc_ca_hours()
+
+
+# data = data[data['DAILYFLAG'] == 1]
+
+print(data)
+
+
