@@ -284,7 +284,7 @@ class HourCalculations:
 
         Need to look at compiling data for a given day
         """
-        df = self.df[self.df['OTSTATE'] == 'CA'].copy()
+        df = self.transpose_hours_in_days()
 
         df['HRS'] = 0
         df['OT'] = 0
@@ -296,6 +296,31 @@ class HourCalculations:
             self.overtime_hours_transpose(idx, row, df)
             self.other_hours_transpose(idx, row, df)
        
+        return df
+
+
+    def transpose_hours_in_days(self):
+        """
+        Moves over the additional hours if the total hours within 
+        a day surpass the 8 hour maximum 
+        """
+        df = self.df[self.df['OTSTATE'] == 'CA'].copy()
+        print(df)
+        print('\n')
+        day_of_week = 1
+        reg_counter = 0
+        ovt_counter = 0
+        oth_counter = 0
+        for idx, row in df.iterrows():
+            if row['DAYOFWEEK'] == day_of_week:
+                reg_counter += row['REG']
+                ovt_counter += row['OVT']
+                oth_counter += row['OTH']
+                if reg_counter > 8:
+                    df.loc[idx, 'OVT'] = df.loc[idx, 'REG'] + df.loc[idx-1, 'REG'] - 8
+                    df.loc[idx, 'REG'] = 8 - df.loc[idx-1, 'REG']
+            else:
+                day_of_week = row['DAYOFWEEK']
         return df
 
 
@@ -328,7 +353,6 @@ class HourCalculations:
             df.loc[idx, 'OTTYPE'] = 'DT'
             df.loc[idx, 'OT'] = df.loc[idx, 'OT'] - df.loc[idx, 'OTHER']
             
-
 
     @staticmethod
     def ot_state(row, multistate):

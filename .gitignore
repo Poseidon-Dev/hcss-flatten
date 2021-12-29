@@ -9,3 +9,5 @@ pgp
 *.pgp
 *.gpg
 *.encrypted
+
+*.xlsx
