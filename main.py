@@ -9,9 +9,9 @@ df = HourCalculations()
 
 
 # df = MergeHeavy().save()
-data = df.calc_non_ca_hours()
-# df.save()
-data = data[data['EMPLOYEENO'] == 10533]
+data = df.all_employees
+df.save()
+# data = data[data['EMPLOYEENO'] == 10533]
 
 print(data)
 # print(data.dtypes)

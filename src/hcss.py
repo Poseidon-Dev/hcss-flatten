@@ -244,8 +244,6 @@ class HourCalculations:
         COMPLETE
         """
         df = self._df.copy()
-        test_df = df[df['EMPLOYEENO'] == 10533]
-        print(test_df)
         multistate = self.multi_state_employees()
         df['OTSTATE'] = df.apply(lambda row: self.ot_state(row, multistate), axis=1)
         df['TYPE'] = df['TYPE'].fillna(value='')
@@ -269,7 +267,7 @@ class HourCalculations:
         Returns the dataframe housing the compiled non CA employee data
         """
         df = self.calc_non_ca_hours()
-        df.drop(columns=['RUNNINGHRS', 'RUNNINGREG', 'HRS', 'OT', 'OTSTATE'], inplace=True)
+        df.drop(columns=['RUNNINGREG', 'HRS', 'OT', 'OTSTATE'], inplace=True)
         return df
 
 
@@ -322,6 +320,9 @@ class HourCalculations:
         df['OT'] = df.apply(lambda row: row['OT'] + row['HRS'] if row['HRS'] < 0 else row['OT'] , axis=1)
         df['HRS'] = df.apply(lambda row: 0 if row['HRS'] < 0 else row['HRS'], axis=1)
 
+        df['REG'] = df['HRS']
+        df['OVT'] = df['OT']
+
         return df
 
    
@@ -373,45 +374,6 @@ class HourCalculations:
         df = df[cols].groupby(['COMPANYNO', 'EMPLOYEENO', 'WEEKNO'])['DAYOFWEEK'].nunique().reset_index()
         df = df[df['DAYOFWEEK'] >= 7]
         return df['EMPLOYEENO'].tolist()
-
-
-    # @staticmethod
-    # def regular_hours_transpose(idx, row, df):
-    #     """
-    #     Max regular hours to 8 
-    #     """
-    #     if row['REG'] >= 8:
-    #         df.loc[idx, 'HRS'] = 8
-    #     else:
-    #         df.loc[idx, 'HRS'] = df.loc[idx, 'REG']
-
-    #     df.loc[idx, 'REG'] = df.loc[idx, 'HRS']
-
-
-    # @staticmethod
-    # def overtime_hours_transpose(idx, row, df):
-    #     """
-    #     Take any hours over 8 in a day, and make them overtime
-    #     """
-    #     df.loc[idx, 'OT'] = df.loc[idx, 'OVT'] + (df.loc[idx, 'REG'] - df.loc[idx, 'HRS'])
-    #     df.loc[idx, 'OVT'] = df.loc[idx, 'OT']
-
-    
-    # @staticmethod
-    # def other_hours_transpose(idx, row, df):
-    #     """
-    #     If overtime hours are over 4 hours, then move difference to otherhours and 
-    #     change other type to DT
-    #     """
-    #     df.loc[idx, 'OTTYPE'] = df.loc[idx, 'TYPE']
-        
-    #     if row['OTH'] + (row['OVT'] - 4) > 0:
-    #         df.loc[idx, 'OTHER'] = row['OTH'] + (df.loc[idx, 'OT'] - 4)
-    #         df.loc[idx, 'OTTYPE'] = 'DT'
-    #         df.loc[idx, 'OT'] = df.loc[idx, 'OT'] - df.loc[idx, 'OTHER']
-    #         df.loc[idx, 'OVT'] = df.loc[idx, 'OT']
-    #         df.loc[idx, 'OTH'] = df.loc[idx, 'OTHER']
-    #         df.loc[idx, 'TYPE'] = df.loc[idx, 'OTTYPE']
 
 
     @staticmethod
