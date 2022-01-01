@@ -206,24 +206,11 @@ class MergeHeavy:
 
 
     @property
-    def merge_heavy(self):
-        frames = [HCSSExport(d).process() for d in self.collect_file_paths('/HEAVY')]
-        return frames
-   
-
-    @property
-    def merge_manual(self):
-        frames = [HCSSExport(d).process() for d in self.collect_file_paths('/MANUAL')]
-        return frames
-
-    
-    @property
     def merge(self):
-        f1 = self.merge_heavy
-        f2 = self.merge_manual
-        df = pd.concat(f1+f2)
+        frames = [HCSSExport(d).process() for d in self.collect_file_paths('/DUMP')]
+        df = pd.concat(frames)
         return df
-
+   
 
     def save(self, name='dumps/export.xlsx'):
         self.merge.to_excel(name, index=False, header=True)

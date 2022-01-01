@@ -10,8 +10,8 @@ df = HourCalculations()
 
 # df = MergeHeavy().save()
 data = df.all_employees
-df.save()
-# data = data[data['EMPLOYEENO'] == 10533]
+# df.save()
+data = data[data['EMPLOYEENO'] == 12799]
 
 print(data)
 # print(data.dtypes)
