@@ -2,20 +2,18 @@ import pandas as pd
 from src.ecmsconn import JobQuery
 from src.hcss import MergeHeavy, HCSSExport, HourCalculations
 
+df = HourCalculations()
+# data = HCSSExport('documentation\HcssAcctHDS.xlsx').process()
 
-## Singular Test
-# df = HCSSExport('documentation\HcssAcctbhc.xlsx')
-# merge = df.process()
-# print(merge)
-
-
-## Test All
-df = HourCalculations('dumps\export.xlsx')
-data = df.calc_ca_hours()
+# print(df)
 
 
-# data = data[data['DAILYFLAG'] == 1]
+# df = MergeHeavy().save()
+data = df.calc_non_ca_hours()
+# df.save()
+data = data[data['EMPLOYEENO'] == 10533]
 
 print(data)
+# print(data.dtypes)
 
 

@@ -23,7 +23,7 @@ class EcmsQuery:
 class JobQuery(EcmsQuery):
 
     command = """
-        SELECT JOBNUMBER as JOB, trim(SUBJOBNUMBER) as SUB, STIDCODE as State 
+        SELECT COMPANYNUMBER as COMPANYNO, JOBNUMBER as JOB, trim(SUBJOBNUMBER) as SUB, STIDCODE as State 
         FROM CMSFIL.JCTDSC 
         WHERE COMPANYNUMBER in (1, 30, 40)
         ORDER BY JCTDSCID DESC
