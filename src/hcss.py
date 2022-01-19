@@ -5,6 +5,7 @@ from src.ecmsconn import JobQuery
 
 pd.options.display.float_format = '{:,.1f}'.format
 
+path = 'C:\Apps\hcss-flatten\documentation'
 path = os.getenv('PR_PATH')
 class HCSSExport:
 
@@ -96,12 +97,14 @@ class HCSSExport:
 
     def grab_states(self):
         states = JobQuery().to_df()
-        states['STATE'] = states['STATE'].astype(int)
+        states['STATE'] = states['STATE']
         return states
     
 
     def add_states(self):
         states = self.grab_states()
+        self.df['JOB'] = self.df['JOB'].fillna('')
+        self.df['JOB'] = self.df['JOB'].astype(str)
         self.df['SUB'] = self.df['SUB'].fillna('')
         self.df['SUB'] = self.df['SUB'].astype(str)
         self.df = pd.merge(self.df, states, how='left', on=['COMPANYNO', 'JOB', 'SUB'])
@@ -118,6 +121,13 @@ class HCSSExport:
             380: 'OR',
             631: 'AZ',
             650: 'OR',
+        }
+        converter = {
+            'AZ': 'AZ',
+            'CA': 'CAHQ',
+            'NM': 'NM',
+            'NV': 'NV',
+            'OR': 'OR',
         }
         self.df['STATE'] = self.df['STATE'].replace(converter)
         return self
@@ -195,7 +205,9 @@ class HCSSExport:
 
 class MergeHeavy:
 
-    def collect_file_paths(self, sub_dir, directory=path):
+    def collect_file_paths(self, sub_dir='/dump', directory=path):
+        directory='C:\Apps\hcss-flatten\documentation'
+        sub_dir=''
         paths = [
             os.path.abspath(os.path.join(dirpath, f)) 
             for dirpath,_,file_names in os.walk(directory+sub_dir) 
@@ -207,7 +219,7 @@ class MergeHeavy:
 
     @property
     def merge(self):
-        frames = [HCSSExport(d).process() for d in self.collect_file_paths('/DUMP')]
+        frames = [HCSSExport(d).process() for d in self.collect_file_paths()]
         df = pd.concat(frames)
         return df
    
@@ -263,15 +275,31 @@ class HourCalculations:
         """
         Returns the df of all compiled data
         """
-        return pd.concat([self.ca_employees, self.non_ca_employees])
+        all_employees = pd.concat([self.ca_employees, self.non_ca_employees])
+        return all_employees
+
+    
+    def finalize_sheet(self):
+        groups = ['EMPLOYEENO', 'COMPANYNO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'PROJECT', 'STATE', 'JCDIST1', 'JCDIST2']
+        grouped = self.all_employees.groupby(groups).sum().reset_index()
+        groups = ['EMPLOYEENO', 'COMPANYNO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'PROJECT', 'STATE', 'JCDIST1', 'JCDIST2', 'DAYOFWEEK']
+        data = grouped.set_index(groups).stack().reset_index().rename(columns={'level_10': 'HOURSTYPE', 0: 'HOURS'})
+        export_cols = ['EMPLOYEENO', 'HOURSTYPE', 'HOURS', 'STATE', 'PROJECT', 'JCDIST1', 'JCDIST2', 'WEEKENDING']
+        data = data[export_cols]
+        data = data[data.HOURS != 0]
+        print(data)
+        return data
+
 
     
     def save(self, path=path):
-        data = self.all_employees
-        date = self.all_employees.iloc[0]['WEEKENDING']
+        data = self.finalize_sheet()
+        date = data.iloc[0]['WEEKENDING']
+        data.drop(columns=['WEEKENDING'], inplace=True)
+
         date_string = f'{date.year}{date.month}{date.day}'
         name = f'{path}/{date_string}_merge.xlsx'
-        data.to_excel(name, index=False, header=True)
+        data.to_excel(name, index=False, header=False)
 
 
     def multi_state_employees(self):
