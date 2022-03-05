@@ -7,6 +7,7 @@ name = "pypi"
 pandas = "*"
 openpyxl = "*"
 pyodbc = "*"
+ecms-api = "*"
 
 [dev-packages]
 

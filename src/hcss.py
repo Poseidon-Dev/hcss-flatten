@@ -1,7 +1,8 @@
 import pandas as pd
 import os
+from datetime import datetime, timedelta
 
-from src.ecmsconn import JobQuery
+from src.ecmsconn import JobQuery, PRQuery
 
 pd.options.display.float_format = '{:,.1f}'.format
 
@@ -62,7 +63,7 @@ class HCSSExport:
             'SUB',
             'JCDIST',
             'REG',
-            'OVT',
+            'OT',
             'OTH',
             'TYPE',
             'DEPT',
@@ -81,11 +82,11 @@ class HCSSExport:
     def hours_adjustments(self):
         self.df = self.df.groupby(self.grouping, group_keys=True, dropna=False).agg(
             REG=pd.NamedAgg(column='REG', aggfunc='sum'),
-            OVT=pd.NamedAgg(column='OVT', aggfunc='sum'),
+            OT=pd.NamedAgg(column='OT', aggfunc='sum'),
             OTH=pd.NamedAgg(column='OTH', aggfunc='sum'),
         ).reset_index()
         self.df['REG'] = self.df['REG'].astype(float)
-        self.df['OVT'] = self.df['OVT'].astype(float)
+        self.df['OT'] = self.df['OT'].astype(float)
         self.df['OTH'] = self.df['OTH'].astype(float)
         return self
 
@@ -147,8 +148,8 @@ class HCSSExport:
 
 
     def phase_code_split(self):
-        self.df['JCDIST1'] = self.df['JCDIST'].str[:6]
-        self.df['JCDIST2'] = self.df['JCDIST'].str[6:]
+        self.df['JCDIST1'] = self.df['JCDIST'].apply(lambda x: str(x)[:6] if str(x) else '')
+        self.df['JCDIST2'] = self.df['JCDIST'].apply(lambda x: str(x)[6:] if str(x) else '')
         self.df.drop(columns='JCDIST', axis=1, inplace=True)
         return self
 
@@ -166,7 +167,7 @@ class HCSSExport:
             'JCDIST1',
             'JCDIST2',
             'REG',
-            'OVT',
+            'OT',
             'OTH',
             # 'TTH',
             'TYPE',
@@ -205,16 +206,45 @@ class HCSSExport:
 
 class MergeHeavy:
 
-    def collect_file_paths(self, sub_dir='/dump', directory=path):
-        directory='C:\Apps\hcss-flatten\documentation'
-        sub_dir=''
-        paths = [
-            os.path.abspath(os.path.join(dirpath, f)) 
-            for dirpath,_,file_names in os.walk(directory+sub_dir) 
-            for f in file_names 
-            if f.split('.')[1] == 'xlsx' 
+    def __init__(self, dir, sub_dir):
+        self.dir = dir
+        self.sub_dir = sub_dir
+
+    def collect_file_paths(self):
+        # directory='C:\Apps\hcss-flatten\documentation'
+        dir_paths = [
+            dirpath.split('/')[len(dirpath.split('/')) - 1]
+            for dirpath,_, file_names in os.walk(os.getenv('PR_PATH'))
+            if dirpath
         ]
-        return paths
+
+        dates = []
+        for date in dir_paths:
+            m,d,y = date.split('-') if date else ['01', '01', '2000']
+            d = f'0{d}' if len(d) == 1 else d
+            m = f'0{m}' if len(m) == 1 else m
+            dates.append({
+                'in': date,
+                'out': y+m+d,
+            })
+
+        max_date = dates[0]
+        for date in dates:
+            if date['out'] > max_date['out']:
+                max_date = date
+
+        dirs = [os.path.abspath(os.path.join(os.getenv('PR_PATH'), max_date['in'])), 
+        os.path.abspath(os.path.join(os.getenv('PR_MAN_PATH'), max_date['in']))]
+
+        file_paths = [
+            os.path.abspath(os.path.join(f_path, f))
+            for dir in dirs
+            for f_path,_,f_names in os.walk(dir)
+            for f in f_names
+            if f.split('.')[1] == 'xlsx'
+        ]
+
+        return file_paths
 
 
     @property
@@ -230,9 +260,16 @@ class MergeHeavy:
 
 class HourCalculations:
 
-    def __init__(self, file_path=None):
-        self.file_path = file_path
-        self._df = MergeHeavy().merge
+    def __init__(self, dir=path, sub_dir=None):
+        self.dir = dir
+        self._df = MergeHeavy(path, sub_dir).merge
+        self.data = pd.DataFrame()
+        self.converstion_dict = {
+            'DT': 'DT',
+            'OT': 'OT',
+            'HL': 'HOL',
+            'VA': 'VAC'
+        }
 
 
     @property
@@ -256,7 +293,7 @@ class HourCalculations:
         Returns the dataframe housing the compiled CA employee data
         """
         df = self.calc_ca_hours()
-        df.drop(columns=['OT', 'OTSTATE'], inplace=True)
+        df.drop(columns=['OTSTATE'], inplace=True)
         return df
 
 
@@ -266,32 +303,97 @@ class HourCalculations:
         Returns the dataframe housing the compiled non CA employee data
         """
         df = self.calc_non_ca_hours()
-        df.drop(columns=['RUNNINGREG', 'HRS', 'OT', 'OTSTATE'], inplace=True)
+        df.drop(columns=['RUNNINGREG', 'HRS', 'OTSTATE'], inplace=True)
         return df
 
 
-    @property
-    def all_employees(self):
+    def get_all_employees(self):
         """
         Returns the df of all compiled data
         """
-        all_employees = pd.concat([self.ca_employees, self.non_ca_employees])
-        return all_employees
+        self.data = pd.concat([self.ca_employees, self.non_ca_employees])
+        return self.data
 
     
+    def split_other_hours(self):
+        types = self.data['TYPE'].unique()
+        for t in types:
+            if t:
+                self.data[t] = 0
+        for t in types:
+            for idx, row in self.data.iterrows():
+                if row['TYPE'] == t:
+                    self.data.loc[idx, t] = row['OTH']
+        self.data.drop(columns=['TYPE', 'OTH'], inplace=True)
+        return self.data
+
+    
+    def get_date(self):
+        weekending = self.data['WEEKENDING'].unique()
+        for date in weekending:
+            for idx, row in self.data.iterrows():
+                if date == row['WEEKENDING']:
+                    self.data.loc[idx, 'WORKDATE'] = date - timedelta(days=7-int(row['DAYOFWEEK']))
+        self.data.drop(columns=['WEEKNO', 'DAYOFWEEK'], inplace=True)
+        return self.data
+
+
+    def stack_hours(self):
+        groups = ['EMPLOYEENO', 'COMPANYNO', 'DEPT', 'WEEKENDING', 'WORKDATE', 'PROJECT', 'STATE', 'JCDIST1', 'JCDIST2', ]
+        grouped = self.data.groupby(groups).sum().reset_index()
+        self.data = grouped.set_index(groups).stack().reset_index().rename(columns={'level_9': 'HOURSTYPE', 0: 'HOURS'})
+        return self.data
+
+    def convert_hourstype(self):
+        self.data['HOURSTYPE'] = self.data['HOURSTYPE'].apply(
+            lambda x: self.converstion_dict[x] if x in self.converstion_dict else x)
+        return self.data
+
+
+    def drop_string_nans(self):
+        self.data = self.data.replace('nan', '')
+        return self.data
+
+
+    def drop_null_hours(self):
+        self.data = self.data[self.data['HOURS'] != 0]
+        return self.data
+
+    def drop_string_nan(self):
+        self.data.replace('nan', '')
+        self.data['JCDIST1'] = self.data['JCDIST1'].replace('nan', '')
+        self.data['JCDIST1'] = self.data['JCDIST1'].fillna('', inplace=True)
+        return self.data
+
+    def sort_vals(self):
+        self.data.sort_values(by=['COMPANYNO', 'EMPLOYEENO', 'WORKDATE', 'HOURSTYPE'], inplace=True)
+        return self.data
+
+    def set_for_export(self):
+        export_cols = ['EMPLOYEENO', 'COMPANYNO', 'WEEKENDING', 'WORKDATE', 'HOURSTYPE', 'HOURS', 'STATE', 'PROJECT', 'JCDIST1', 'JCDIST2']
+        self.data = self.data[export_cols]
+        return self.data
+
+    def fetch_rates(self):
+        companies = {1: 'APC', 30: 'MEE', 40: 'GCS' }
+        resp = PRQuery().to_df()
+        resp['COMPANYNO'] = resp['COMPANYNO'].replace(companies)
+        self.data = self.data.merge(resp, how='left', on=['COMPANYNO', 'EMPLOYEENO'])
+        return self.data
+   
     def finalize_sheet(self):
-        groups = ['EMPLOYEENO', 'COMPANYNO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'PROJECT', 'STATE', 'JCDIST1', 'JCDIST2']
-        grouped = self.all_employees.groupby(groups).sum().reset_index()
-        groups = ['EMPLOYEENO', 'COMPANYNO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'PROJECT', 'STATE', 'JCDIST1', 'JCDIST2', 'DAYOFWEEK']
-        data = grouped.set_index(groups).stack().reset_index().rename(columns={'level_10': 'HOURSTYPE', 0: 'HOURS'})
-        export_cols = ['EMPLOYEENO', 'HOURSTYPE', 'HOURS', 'STATE', 'PROJECT', 'JCDIST1', 'JCDIST2', 'WEEKENDING']
-        data = data[export_cols]
-        data = data[data.HOURS != 0]
-        print(data)
-        return data
+        self.get_all_employees()
+        self.split_other_hours()
+        self.get_date()
+        self.stack_hours()
+        self.convert_hourstype()
+        self.drop_null_hours()
+        self.drop_string_nan()
+        self.set_for_export()
+        self.sort_vals()
+        self.fetch_rates()
+        return self.data
 
-
-    
     def save(self, path=path):
         data = self.finalize_sheet()
         date = data.iloc[0]['WEEKENDING']
@@ -331,12 +433,12 @@ class HourCalculations:
         df = self.df[self.df['OTSTATE'] != 'CA'].copy()
         df['RUNNINGREG'] = df.groupby(['COMPANYNO', 'EMPLOYEENO', 'DEPT', 'WEEKENDING', 'WEEKNO'])['REG'].transform(pd.Series.cumsum)
         df['HRS'] = df.apply(lambda row: row['REG'] if row['RUNNINGREG'] <= 40 else row['REG'] - (row['RUNNINGREG'] - 40), axis=1)
-        df['OT'] = df.apply(lambda row: row['REG'] - row['HRS'] + row['OVT'] if row['RUNNINGREG'] >= 40 else row['OVT'] , axis=1)
+        df['OT'] = df.apply(lambda row: row['REG'] - row['HRS'] + row['OT'] if row['RUNNINGREG'] >= 40 else row['OT'] , axis=1)
         df['OT'] = df.apply(lambda row: row['OT'] + row['HRS'] if row['HRS'] < 0 else row['OT'] , axis=1)
         df['HRS'] = df.apply(lambda row: 0 if row['HRS'] < 0 else row['HRS'], axis=1)
 
         df['REG'] = df['HRS']
-        df['OVT'] = df['OT']
+        df['OT'] = df['OT']
 
         return df
 
@@ -363,14 +465,14 @@ class HourCalculations:
 
         df['CARUNNINGREG'] = df.groupby(['COMPANYNO', 'EMPLOYEENO', 'DEPT', 'WEEKENDING', 'WEEKNO', 'DAYOFWEEK'])['REG'].transform(pd.Series.cumsum)
         df['CAPREVREG'] = df['REG'].shift()
-        df['OT'] = df.apply(lambda row: row['OVT'] if row['CARUNNINGREG'] <= 8 else row['CARUNNINGREG'] - 8 + row['OVT'], axis=1)
+        df['OT'] = df.apply(lambda row: row['OT'] if row['CARUNNINGREG'] <= 8 else row['CARUNNINGREG'] - 8 + row['OT'], axis=1)
         df['HR'] = df.apply(lambda row: row['REG'] if row['CARUNNINGREG'] <= 8 else 8 - row['CAPREVREG'], axis=1)
         df['DT'] = df.apply(lambda row: row['OTH'] if row['OT'] <= 4 else row['OT'] - 4 + row['OTH'] , axis=1)
         df['OT'] = df.apply(lambda row: row['OT'] if row['OT'] <=4 else row['OT'] - row['DT'], axis=1)
-        df['CTYPE'] = df.apply(lambda row: row['TYPE'] if row['DT'] == 0 else 'DT', axis=1)
+        df['CTYPE'] = df.apply(lambda row: row['TYPE'] if row['DT'] != 0 else 'DT', axis=1)
 
         df['REG'] = df['HR']
-        df['OVT'] = df['OT']
+        df['OT'] = df['OT']
         df['OTH'] = df['DT']
         df['TYPE'] = df['CTYPE']
 
@@ -416,4 +518,4 @@ class HourCalculations:
         else:
             return 0
 
-    
+# TODO Add division based on department number in upload

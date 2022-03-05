@@ -28,3 +28,21 @@ class JobQuery(EcmsQuery):
         WHERE COMPANYNUMBER in (1, 30, 40)
         ORDER BY JCTDSCID DESC
         """
+
+
+class JobQuery(EcmsQuery):
+
+    command = """
+        SELECT COMPANYNUMBER as COMPANYNO, JOBNUMBER as JOB, trim(SUBJOBNUMBER) as SUB, STATECODE as State 
+        FROM CMSFIL.JCTDSC 
+        WHERE COMPANYNUMBER in (1, 30, 40)
+        ORDER BY JCTDSCID DESC
+        """
+
+class PRQuery(EcmsQuery):
+
+    command = """
+        SELECT COMPANYNO AS COMPANYNO, EMPLOYEENO, REGRATE 
+        FROM CMSFIL.PRTERT 
+        WHERE COMPANYNO in (1, 30, 40)
+        """
